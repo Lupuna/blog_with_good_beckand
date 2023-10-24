@@ -3,6 +3,8 @@ from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.views.generic import ListView
 from django.core.mail import send_mail
+from taggit.models import Tag
+from django.db.models import Count
 from . import models
 from . import forms
 
@@ -24,7 +26,7 @@ def post_share(request, post_id):
         # Форма была передана на обработку
         form = forms.EmailPostForm(request.POST)
         if form.is_valid():
-            # форма успешно прошла валидацию
+            # форма успешно прошла валидацию, поэтому мы извлекаем полученные данные
             cd = form.cleaned_data
             # отправить электронное письмо
             post_url = request.build_absolute_uri(post.get_absolute_url())
@@ -42,12 +44,15 @@ def post_share(request, post_id):
     return render(request, 'blog/post/share.html', context)
 
 
-def post_list(request):
+def post_list(request, tag_slug=None):
     post_lists = models.Post.published.all()
+    tag = None
+    if tag_slug:
+        tag = get_object_or_404(Tag, slug=tag_slug)
+        post_lists = post_lists.filter(tags__in=[tag])
     # Постраничная разбивка с 2-мя постами на страницу
     paginator = Paginator(post_lists, 2)
     page_number = request.GET.get('page', 1)
-
     try:
         posts = paginator.page(page_number)
     except EmptyPage:
@@ -57,7 +62,10 @@ def post_list(request):
         # если page_number не целое число, то выдать первую страницу
         posts = paginator.page(1)
 
-    context = {'posts': posts}
+    context = {
+            'posts': posts,
+            'tag': tag,
+        }
     return render(request, 'blog/post/list.html', context)
 
 
@@ -70,10 +78,14 @@ def post_ditail(request, year, month, day, post):
                              publish__month=month, publish__day=day)
     comments = post.comments.filter(active=True)
     form = forms.CommentForm()
+    post_list_ids = post.tags.values_list('id', flat=True)
+    similar_post = models.Post.published.filter(tags__in=post_list_ids).exclude(id=post.id)
+    similar_post = similar_post.annotate(same_tags=Count('tags')).order_by('-same_tags', 'publish')[:4]
     context = {
         'post': post,
         'comments': comments,
-        'form': form
+        'form': form,
+        'similar_posts': similar_post,
     }
     return render(request, 'blog/post/detail.html', context)
 
