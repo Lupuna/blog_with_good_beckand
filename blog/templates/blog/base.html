@@ -17,6 +17,16 @@
       <h2>My Blog</h2>
       <p>Hey dude, it's my blog</p>
       <p>I've written {% total_posts %} post so far.</p>
+      <p><a href="{% url 'blog:post_feed' %}">Subscribe to my RSS feed</a></p>
+      <h3>Latest post</h3>
+      {% show_latest_post 2 %}
+      <h3>Most commented posts</h3>
+      {% get_most_commented_posts as most_commented_posts %}
+      <ul>
+          {% for most_commented_post in most_commented_posts %}
+          <li><a href="{{most_commented_post.get_absolute_url}}">{{most_commented_post.title}}</a></li>
+          {% endfor %}
+      </ul>
   </div>
 </body>
 </html>
