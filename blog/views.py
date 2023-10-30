@@ -5,8 +5,8 @@ from django.views.generic import ListView
 from django.core.mail import send_mail
 from taggit.models import Tag
 from django.db.models import Count
-from . import models
-from . import forms
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
+from . import models, forms
 
 
 class PostListView(ListView):
@@ -27,7 +27,7 @@ def post_share(request, post_id):
         form = forms.EmailPostForm(request.POST)
         if form.is_valid():
             # форма успешно прошла валидацию, поэтому мы извлекаем полученные данные
-            cd = form.cleaned_data
+            cd = form.cleaned_data()
             # отправить электронное письмо
             post_url = request.build_absolute_uri(post.get_absolute_url())
             subject = f'{cd["name"]} recommends you read {post.title}'
@@ -63,9 +63,9 @@ def post_list(request, tag_slug=None):
         posts = paginator.page(1)
 
     context = {
-            'posts': posts,
-            'tag': tag,
-        }
+        'posts': posts,
+        'tag': tag,
+    }
     return render(request, 'blog/post/list.html', context)
 
 
@@ -109,3 +109,25 @@ def post_comment(request, post_id):
         'comment': comment
     }
     return render(request, 'blog/post/comment.html', context)
+
+
+def post_search(request):
+    form = forms.SearchForm()
+    query = None
+    results = []
+    if 'query' in request.GET:
+        form = forms.SearchForm(request.GET)
+        if form.is_valid():
+            query = form.cleaned_data['query']
+            search_vector = SearchVector('title', weight='A')+SearchVector('body', weight='B')
+            search_query = SearchQuery(query)
+            # ranck__gte=0.3 фильтрует только те записи, у которых процент совпадения 0.3 и выше
+            # подробнее в практике на основе тестирования 4.0 186 стр.
+            results = models.Post.published.annotate(search=search_vector, ranck=SearchRank(search_vector, search_query))\
+                .filter(ranck__gte=0.3).order_by('-rank')
+    context = {
+        'form': form,
+        'query': query,
+        'results': results
+    }
+    return render(request, 'blog/post/search.html', context)
